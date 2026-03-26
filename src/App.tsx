@@ -1,26 +1,62 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
-import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import Index from "./pages/Index.tsx";
-import NotFound from "./pages/NotFound.tsx";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
+import { AppDataProvider } from "@/contexts/AppDataContext";
+import PrivateRoute from "@/components/PrivateRoute";
+import DashboardLayout from "@/components/DashboardLayout";
+import LoginPage from "@/pages/LoginPage";
+import RegisterPage from "@/pages/RegisterPage";
+import DeathVerificationPage from "@/pages/DeathVerificationPage";
+import DashboardPage from "@/pages/DashboardPage";
+import AssetsPage from "@/pages/AssetsPage";
+import HeirsPage from "@/pages/HeirsPage";
+import VideosPage from "@/pages/VideosPage";
+import WillPage from "@/pages/WillPage";
+import HeirDashboardPage from "@/pages/HeirDashboardPage";
+import ActivityPage from "@/pages/ActivityPage";
+import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <AppDataProvider>
+          <TooltipProvider>
+            <Sonner />
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<Navigate to="/login" replace />} />
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/register" element={<RegisterPage />} />
+                <Route path="/death-verification" element={<DeathVerificationPage />} />
+
+                {/* Owner routes */}
+                <Route element={<PrivateRoute allowedRoles={['OWNER']}><DashboardLayout /></PrivateRoute>}>
+                  <Route path="/dashboard" element={<DashboardPage />} />
+                  <Route path="/assets" element={<AssetsPage />} />
+                  <Route path="/heirs" element={<HeirsPage />} />
+                  <Route path="/videos" element={<VideosPage />} />
+                  <Route path="/will" element={<WillPage />} />
+                  <Route path="/activity" element={<ActivityPage />} />
+                </Route>
+
+                {/* Heir routes */}
+                <Route element={<PrivateRoute allowedRoles={['HEIR']}><DashboardLayout /></PrivateRoute>}>
+                  <Route path="/heir-dashboard" element={<HeirDashboardPage />} />
+                </Route>
+
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </TooltipProvider>
+        </AppDataProvider>
+      </AuthProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 
