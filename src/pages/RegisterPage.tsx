@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { Lock, Mail, User, Eye, EyeOff, Check, X } from 'lucide-react';
+import { Lock, Mail, User, Eye, EyeOff, Check, X, Camera, CheckCircle, Download } from 'lucide-react';
 import { toast } from 'sonner';
 
 const getStrength = (pw: string) => {
@@ -17,6 +17,8 @@ const getStrength = (pw: string) => {
 const strengthLabels = ['Weak', 'Fair', 'Good', 'Strong'];
 const strengthColors = ['bg-destructive', 'bg-warning', 'bg-primary', 'bg-success'];
 
+const FACE_KEY = 'pdcp_registered_face';
+
 const RegisterPage = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -24,15 +26,62 @@ const RegisterPage = () => {
   const [confirm, setConfirm] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const [capturedFace, setCapturedFace] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const { register } = useAuth();
   const navigate = useNavigate();
 
   const strength = getStrength(password);
 
+  const startCamera = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640, height: 480 } });
+      streamRef.current = stream;
+      if (videoRef.current) videoRef.current.srcObject = stream;
+      setShowCamera(true);
+    } catch {
+      toast.error('Camera access denied. Please allow camera permissions.');
+    }
+  }, []);
+
+  const stopCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+    setShowCamera(false);
+  }, []);
+
+  const capturePhoto = useCallback(() => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+    setCapturedFace(dataUrl);
+    localStorage.setItem(FACE_KEY, dataUrl);
+    stopCamera();
+    toast.success('Face captured and registered successfully!');
+  }, [stopCamera]);
+
+  const downloadFace = () => {
+    if (!capturedFace) return;
+    const link = document.createElement('a');
+    link.href = capturedFace;
+    link.download = 'registered-face.jpg';
+    link.click();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password !== confirm) { toast.error('Passwords do not match'); return; }
     if (strength < 2) { toast.error('Password is too weak'); return; }
+    if (!capturedFace) { toast.error('Please capture your face for registration'); return; }
     setLoading(true);
     try {
       await register(name, email, password);
@@ -102,7 +151,50 @@ const RegisterPage = () => {
               </div>
             </div>
 
-            <button type="submit" disabled={loading} className="w-full py-2.5 rounded-lg gradient-primary text-primary-foreground font-semibold text-sm disabled:opacity-50">
+            {/* Face Registration */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-primary-foreground/80 block">Face Registration <span className="text-destructive">*</span></label>
+              <canvas ref={canvasRef} className="hidden" />
+              {showCamera ? (
+                <div className="relative rounded-lg overflow-hidden border border-border">
+                  <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-video object-cover" />
+                  <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2">
+                    <button type="button" onClick={capturePhoto} className="px-4 py-2 rounded-lg gradient-primary text-primary-foreground text-sm font-medium">
+                      📸 Capture Face
+                    </button>
+                    <button type="button" onClick={stopCamera} className="px-4 py-2 rounded-lg bg-destructive/80 text-destructive-foreground text-sm">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : capturedFace ? (
+                <div className="space-y-2">
+                  <div className="relative rounded-lg overflow-hidden border border-success/30">
+                    <img src={capturedFace} alt="Registered face" className="w-full aspect-video object-cover" />
+                    <div className="absolute top-2 right-2 flex gap-1">
+                      <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-success/90 text-success-foreground text-xs font-medium">
+                        <CheckCircle className="w-3 h-3" /> Registered
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={startCamera} className="flex-1 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:bg-muted/30 transition-colors">
+                      Retake Photo
+                    </button>
+                    <button type="button" onClick={downloadFace} className="flex items-center justify-center gap-1 px-3 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:bg-muted/30 transition-colors">
+                      <Download className="w-3.5 h-3.5" /> Download
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button" onClick={startCamera} className="w-full flex items-center justify-center gap-2 p-4 rounded-lg border-2 border-dashed border-border hover:border-primary/50 transition-colors text-sm text-muted-foreground">
+                  <Camera className="w-5 h-5" />
+                  Open Camera to Register Face
+                </button>
+              )}
+            </div>
+
+            <button type="submit" disabled={loading || !capturedFace} className="w-full py-2.5 rounded-lg gradient-primary text-primary-foreground font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed">
               {loading ? 'Creating account...' : 'Create Account'}
             </button>
           </form>
