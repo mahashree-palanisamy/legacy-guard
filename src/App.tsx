@@ -17,6 +17,10 @@ import VideosPage from "@/pages/VideosPage";
 import WillPage from "@/pages/WillPage";
 import HeirDashboardPage from "@/pages/HeirDashboardPage";
 import ActivityPage from "@/pages/ActivityPage";
+import ProfilePage from "@/pages/ProfilePage";
+import SettingsPage from "@/pages/SettingsPage";
+import HelpPage from "@/pages/HelpPage";
+import NotificationsPage from "@/pages/NotificationsPage";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -43,6 +47,10 @@ const App = () => (
                   <Route path="/videos" element={<VideosPage />} />
                   <Route path="/will" element={<WillPage />} />
                   <Route path="/activity" element={<ActivityPage />} />
+                  <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/help" element={<HelpPage />} />
+                  <Route path="/notifications" element={<NotificationsPage />} />
                 </Route>
 
                 {/* Heir routes */}

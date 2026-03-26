@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, type ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 
 export interface Asset {
   id: string;
@@ -63,6 +63,23 @@ const AppDataContext = createContext<AppData | undefined>(undefined);
 const genId = () => Math.random().toString(36).slice(2, 10);
 const now = () => new Date().toISOString();
 
+const KEYS = {
+  assets: 'pdcp_assets',
+  heirs: 'pdcp_heirs',
+  videos: 'pdcp_videos',
+  will: 'pdcp_will',
+  activities: 'pdcp_activities',
+};
+
+function loadJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 const defaultActivities: ActivityItem[] = [
   { id: '1', type: 'asset_added', description: 'Bank account "HDFC Savings" added', timestamp: '2026-03-25T10:30:00Z' },
   { id: '2', type: 'heir_added', description: 'Heir "Priya Sharma" added', timestamp: '2026-03-24T14:20:00Z' },
@@ -70,11 +87,18 @@ const defaultActivities: ActivityItem[] = [
 ];
 
 export const AppDataProvider = ({ children }: { children: ReactNode }) => {
-  const [assets, setAssets] = useState<Asset[]>([]);
-  const [heirs, setHeirs] = useState<Heir[]>([]);
-  const [videos, setVideos] = useState<VideoMessage[]>([]);
-  const [willContent, setWillContent] = useState('');
-  const [activities, setActivities] = useState<ActivityItem[]>(defaultActivities);
+  const [assets, setAssets] = useState<Asset[]>(() => loadJson(KEYS.assets, []));
+  const [heirs, setHeirs] = useState<Heir[]>(() => loadJson(KEYS.heirs, []));
+  const [videos, setVideos] = useState<VideoMessage[]>(() => loadJson(KEYS.videos, []));
+  const [willContent, setWillContent] = useState(() => localStorage.getItem(KEYS.will) || '');
+  const [activities, setActivities] = useState<ActivityItem[]>(() => loadJson(KEYS.activities, defaultActivities));
+
+  // Persist to localStorage on every change
+  useEffect(() => { localStorage.setItem(KEYS.assets, JSON.stringify(assets)); }, [assets]);
+  useEffect(() => { localStorage.setItem(KEYS.heirs, JSON.stringify(heirs)); }, [heirs]);
+  useEffect(() => { localStorage.setItem(KEYS.videos, JSON.stringify(videos)); }, [videos]);
+  useEffect(() => { localStorage.setItem(KEYS.will, willContent); }, [willContent]);
+  useEffect(() => { localStorage.setItem(KEYS.activities, JSON.stringify(activities)); }, [activities]);
 
   const addActivity = (type: ActivityItem['type'], description: string) => {
     setActivities((prev) => [{ id: genId(), type, description, timestamp: now() }, ...prev]);
