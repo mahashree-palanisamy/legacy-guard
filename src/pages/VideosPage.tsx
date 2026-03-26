@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Video, Upload, Camera, Loader2, CheckCircle, AlertTriangle, Brain } from 'lucide-react';
+import { Video, Upload, Camera, Loader2, CheckCircle, AlertTriangle, Brain, Square, Download, Play } from 'lucide-react';
 import VideoCard from '@/components/VideoCard';
 import { useAppData, type VideoMessage } from '@/contexts/AppDataContext';
 import { toast } from 'sonner';
@@ -12,32 +12,100 @@ const analysisChecks = [
   { label: 'Forced speech detection', delay: 2600 },
 ];
 
+const VIDEOS_KEY = 'pdcp_recorded_videos';
+
 const VideosPage = () => {
   const { videos, addVideo } = useAppData();
   const [title, setTitle] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [recording, setRecording] = useState(false);
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisStep, setAnalysisStep] = useState(-1);
   const [analysisResult, setAnalysisResult] = useState<VideoMessage['analysisResult'] | null>(null);
+  const [recordingTime, setRecordingTime] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const previewRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const startRecording = async () => {
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach(t => t.stop());
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+    };
+  }, [recordedUrl]);
+
+  const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
-      setRecording(true);
-    } catch { toast.error('Camera/mic access denied'); }
-  };
 
-  const stopRecording = () => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
+      chunksRef.current = [];
+      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9,opus' });
+      recorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+        setRecordedBlob(blob);
+        const url = URL.createObjectURL(blob);
+        setRecordedUrl(url);
+        setFile(new File([blob], `recording-${Date.now()}.webm`, { type: 'video/webm' }));
+
+        // Save to localStorage (base64)
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          try {
+            const existing = JSON.parse(localStorage.getItem(VIDEOS_KEY) || '[]');
+            existing.push({ data: reader.result, title: title || 'Untitled', timestamp: Date.now() });
+            localStorage.setItem(VIDEOS_KEY, JSON.stringify(existing));
+          } catch {
+            // localStorage might be full
+          }
+        };
+        reader.readAsDataURL(blob);
+
+        toast.success('Recording saved successfully!');
+      };
+
+      recorder.start(1000);
+      setRecording(true);
+      setRecordingTime(0);
+      timerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
+    } catch {
+      toast.error('Camera/mic access denied');
+    }
+  }, [title]);
+
+  const stopRecording = useCallback(() => {
+    recorderRef.current?.stop();
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+    if (timerRef.current) clearInterval(timerRef.current);
     setRecording(false);
-    setFile(new File(['recorded'], 'webcam-recording.webm', { type: 'video/webm' }));
-    toast.success('Recording saved');
-  };
+  }, []);
+
+  const downloadVideo = useCallback(() => {
+    if (!recordedBlob) return;
+    const url = URL.createObjectURL(recordedBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `legacy-video-${Date.now()}.webm`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Video downloaded!');
+  }, [recordedBlob]);
+
+  const formatTime = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 
   const runAnalysis = () => {
     setAnalyzing(true);
@@ -65,6 +133,8 @@ const VideosPage = () => {
     addVideo({ title, fileName: file.name, analysisResult: analysisResult || undefined });
     setTitle('');
     setFile(null);
+    setRecordedBlob(null);
+    setRecordedUrl(null);
     setAnalysisResult(null);
     toast.success('Video saved!');
   };
@@ -86,10 +156,35 @@ const VideosPage = () => {
 
           {recording ? (
             <div className="space-y-3">
-              <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-video rounded-lg bg-muted object-cover" />
-              <button onClick={stopRecording} className="w-full py-2.5 rounded-lg bg-destructive text-destructive-foreground text-sm font-medium">
-                Stop Recording
+              <div className="relative rounded-lg overflow-hidden border border-destructive/50">
+                <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-video object-cover" />
+                <div className="absolute top-3 left-3 flex items-center gap-2 px-3 py-1.5 rounded-full bg-destructive/90 text-destructive-foreground text-xs font-medium">
+                  <span className="w-2 h-2 rounded-full bg-destructive-foreground animate-pulse" />
+                  REC {formatTime(recordingTime)}
+                </div>
+              </div>
+              <button onClick={stopRecording} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-destructive text-destructive-foreground text-sm font-medium">
+                <Square className="w-4 h-4" /> Stop Recording
               </button>
+            </div>
+          ) : recordedUrl ? (
+            <div className="space-y-3">
+              <div className="relative rounded-lg overflow-hidden border border-success/30">
+                <video ref={previewRef} src={recordedUrl} controls className="w-full aspect-video object-cover" />
+                <div className="absolute top-2 right-2">
+                  <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-success/90 text-success-foreground text-xs font-medium">
+                    <CheckCircle className="w-3 h-3" /> Recorded
+                  </span>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={startRecording} className="flex-1 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:bg-muted/30 transition-colors">
+                  Re-record
+                </button>
+                <button onClick={downloadVideo} className="flex items-center justify-center gap-1 px-4 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:bg-muted/30 transition-colors">
+                  <Download className="w-3.5 h-3.5" /> Download
+                </button>
+              </div>
             </div>
           ) : (
             <div className="flex gap-3">
@@ -103,7 +198,7 @@ const VideosPage = () => {
             </div>
           )}
 
-          {file && !analysisResult && (
+          {file && !analysisResult && !recording && (
             <button onClick={runAnalysis} disabled={analyzing} className="w-full py-2.5 rounded-lg bg-secondary text-secondary-foreground text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50">
               <Brain className="w-4 h-4" /> {analyzing ? 'Analyzing...' : 'Run AI Video Analysis'}
             </button>
@@ -159,7 +254,7 @@ const VideosPage = () => {
             )}
           </AnimatePresence>
 
-          <button onClick={handleSave} disabled={!file || !title.trim()} className="w-full py-2.5 rounded-lg gradient-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
+          <button onClick={handleSave} disabled={!file || !title.trim() || recording} className="w-full py-2.5 rounded-lg gradient-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
             Save Video Message
           </button>
         </div>

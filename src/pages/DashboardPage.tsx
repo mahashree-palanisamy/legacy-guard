@@ -1,30 +1,153 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Shield, Users, FileText, Activity } from 'lucide-react';
+import { Shield, Users, FileText, Activity, Video, Quote, Sparkles, Heart } from 'lucide-react';
 import StatCard from '@/components/StatCard';
 import Timeline from '@/components/Timeline';
 import { useAppData } from '@/contexts/AppDataContext';
 import { useAuth } from '@/contexts/AuthContext';
 
+const quotes = [
+  { text: "Your legacy is not what you leave behind, but who you impact.", author: "Unknown" },
+  { text: "Plan today to protect tomorrow.", author: "Ancient Proverb" },
+  { text: "The best time to plant a tree was 20 years ago. The second best time is now.", author: "Chinese Proverb" },
+  { text: "What we do for ourselves dies with us. What we do for others remains immortal.", author: "Albert Pike" },
+  { text: "A good man leaves an inheritance to his children's children.", author: "Proverbs 13:22" },
+];
+
 const DashboardPage = () => {
-  const { assets, heirs, willContent, activities } = useAppData();
+  const { assets, heirs, videos, willContent, activities } = useAppData();
   const { user } = useAuth();
+
+  const todayQuote = quotes[new Date().getDate() % quotes.length];
 
   return (
     <div className="page-container">
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="section-title">Dashboard</h1>
-        <p className="text-muted-foreground text-sm mt-1">Welcome back, {user?.name}. Here's your digital legacy overview.</p>
+      {/* Welcome Banner */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="relative overflow-hidden rounded-2xl gradient-primary p-8 mb-8"
+      >
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute top-0 right-0 w-64 h-64 rounded-full bg-primary-foreground/20 -translate-y-1/2 translate-x-1/4" />
+          <div className="absolute bottom-0 left-0 w-48 h-48 rounded-full bg-primary-foreground/10 translate-y-1/3 -translate-x-1/4" />
+        </div>
+        <div className="relative z-10">
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles className="w-5 h-5 text-primary-foreground/80" />
+            <span className="text-primary-foreground/70 text-sm font-medium">Welcome back</span>
+          </div>
+          <h1 className="text-3xl font-bold text-primary-foreground">{user?.name || 'User'}</h1>
+          <p className="text-primary-foreground/70 text-sm mt-2 max-w-lg">
+            Your digital legacy is safe and secure. Here's your overview — keep your records up to date to protect what matters most.
+          </p>
+        </div>
       </motion.div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+      {/* Quote of the Day */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="glass-card p-6 mb-8 relative overflow-hidden"
+      >
+        <div className="absolute top-3 right-4 opacity-10">
+          <Quote className="w-16 h-16 text-primary" />
+        </div>
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-lg bg-primary/10 text-primary mt-0.5">
+            <Heart className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-muted-foreground mb-1">Quote of the Day</p>
+            <p className="text-base italic text-foreground leading-relaxed">"{todayQuote.text}"</p>
+            <p className="text-xs text-muted-foreground mt-2">— {todayQuote.author}</p>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard title="Total Assets" value={assets.length} icon={Shield} color="primary" />
         <StatCard title="Total Heirs" value={heirs.length} icon={Users} color="accent" />
+        <StatCard title="Legacy Videos" value={videos.length} icon={Video} color="success" />
         <StatCard title="Will Status" value={willContent ? 'Written' : 'Pending'} icon={FileText} color={willContent ? 'success' : 'warning'} />
-        <StatCard title="Activities" value={activities.length} icon={Activity} color="primary" />
       </div>
 
-      <div className="mt-8">
+      {/* Quick Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-card p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="p-1.5 rounded-lg bg-primary/10">
+              <Shield className="w-4 h-4 text-primary" />
+            </div>
+            <h3 className="text-sm font-semibold">Asset Breakdown</h3>
+          </div>
+          {assets.length > 0 ? (
+            <div className="space-y-2">
+              {['bank', 'social', 'crypto', 'document', 'other'].map(type => {
+                const count = assets.filter(a => a.type === type).length;
+                if (count === 0) return null;
+                return (
+                  <div key={type} className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground capitalize">{type}</span>
+                    <span className="font-medium">{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No assets added yet</p>
+          )}
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="glass-card p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="p-1.5 rounded-lg bg-accent/10">
+              <Users className="w-4 h-4 text-accent" />
+            </div>
+            <h3 className="text-sm font-semibold">Recent Heirs</h3>
+          </div>
+          {heirs.length > 0 ? (
+            <div className="space-y-2">
+              {heirs.slice(0, 3).map(h => (
+                <div key={h.id} className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{h.name}</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent">{h.relationship}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No heirs added yet</p>
+          )}
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="glass-card p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="p-1.5 rounded-lg bg-success/10">
+              <Activity className="w-4 h-4 text-success" />
+            </div>
+            <h3 className="text-sm font-semibold">Platform Status</h3>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Security</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-success/10 text-success">Active</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Face ID</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-success/10 text-success">Registered</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Activities</span>
+              <span className="font-medium">{activities.length}</span>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+
+      {/* Recent Activity */}
+      <div>
         <h2 className="text-lg font-semibold mb-4">Recent Activity</h2>
         <div className="glass-card p-5">
           <Timeline items={activities.slice(0, 5)} />
