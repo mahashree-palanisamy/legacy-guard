@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Video, Upload, Camera, Loader2, CheckCircle, AlertTriangle, Brain, Square, Download, Play } from 'lucide-react';
+import { Video, Camera, Loader2, CheckCircle, AlertTriangle, Brain, Square, Download, AlertOctagon } from 'lucide-react';
 import VideoCard from '@/components/VideoCard';
 import { useAppData, type VideoMessage } from '@/contexts/AppDataContext';
 import { toast } from 'sonner';
@@ -17,7 +17,6 @@ const VIDEOS_KEY = 'pdcp_recorded_videos';
 const VideosPage = () => {
   const { videos, addVideo } = useAppData();
   const [title, setTitle] = useState('');
-  const [file, setFile] = useState<File | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
@@ -25,22 +24,92 @@ const VideosPage = () => {
   const [analysisStep, setAnalysisStep] = useState(-1);
   const [analysisResult, setAnalysisResult] = useState<VideoMessage['analysisResult'] | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [emotionStopped, setEmotionStopped] = useState(false);
+  const [emotionStatus, setEmotionStatus] = useState<'calm' | 'monitoring' | 'distressed'>('calm');
   const videoRef = useRef<HTMLVideoElement>(null);
   const previewRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const emotionRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     return () => {
       streamRef.current?.getTracks().forEach(t => t.stop());
       if (timerRef.current) clearInterval(timerRef.current);
+      if (emotionRef.current) clearInterval(emotionRef.current);
       if (recordedUrl) URL.revokeObjectURL(recordedUrl);
     };
   }, [recordedUrl]);
 
+  const triggerAutoDownload = useCallback((blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `legacy-video-${Date.now()}.webm`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const autoSaveVideo = useCallback((blob: Blob, videoTitle: string, wasEmotionStopped: boolean) => {
+    // Save to localStorage
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      try {
+        const existing = JSON.parse(localStorage.getItem(VIDEOS_KEY) || '[]');
+        existing.push({ data: reader.result, title: videoTitle || 'Untitled', timestamp: Date.now() });
+        localStorage.setItem(VIDEOS_KEY, JSON.stringify(existing));
+      } catch { /* localStorage full */ }
+    };
+    reader.readAsDataURL(blob);
+
+    // Auto-download
+    triggerAutoDownload(blob);
+
+    // Run analysis and add to context
+    const isGenuine = !wasEmotionStopped && Math.random() > 0.2;
+    const result: VideoMessage['analysisResult'] = {
+      status: isGenuine ? 'verified' : 'review_needed',
+      confidence: isGenuine ? 82 + Math.floor(Math.random() * 15) : 45 + Math.floor(Math.random() * 20),
+      checks: analysisChecks.map((c) => ({ label: c.label, passed: isGenuine || Math.random() > 0.4 })),
+    };
+
+    // Show analysis animation
+    setAnalyzing(true);
+    setAnalysisStep(-1);
+    analysisChecks.forEach((check, i) => {
+      setTimeout(() => setAnalysisStep(i), check.delay);
+    });
+    setTimeout(() => {
+      setAnalysisResult(result);
+      setAnalyzing(false);
+      addVideo({
+        title: videoTitle || 'Untitled Recording',
+        fileName: `recording-${Date.now()}.webm`,
+        analysisResult: result,
+      });
+      toast.success('Video auto-saved to your account & downloaded!');
+    }, 3500);
+  }, [addVideo, triggerAutoDownload]);
+
+  const finishRecording = useCallback((wasEmotionStopped: boolean) => {
+    recorderRef.current?.stop();
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (emotionRef.current) clearInterval(emotionRef.current);
+    setRecording(false);
+    setEmotionStatus('calm');
+  }, []);
+
   const startRecording = useCallback(async () => {
+    setEmotionStopped(false);
+    setEmotionStatus('calm');
+    setAnalysisResult(null);
+    setRecordedBlob(null);
+    setRecordedUrl(null);
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       streamRef.current = stream;
@@ -49,6 +118,8 @@ const VideosPage = () => {
       chunksRef.current = [];
       const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9,opus' });
       recorderRef.current = recorder;
+
+      let stoppedByEmotion = false;
 
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
@@ -59,91 +130,55 @@ const VideosPage = () => {
         setRecordedBlob(blob);
         const url = URL.createObjectURL(blob);
         setRecordedUrl(url);
-        setFile(new File([blob], `recording-${Date.now()}.webm`, { type: 'video/webm' }));
-
-        // Save to localStorage (base64)
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          try {
-            const existing = JSON.parse(localStorage.getItem(VIDEOS_KEY) || '[]');
-            existing.push({ data: reader.result, title: title || 'Untitled', timestamp: Date.now() });
-            localStorage.setItem(VIDEOS_KEY, JSON.stringify(existing));
-          } catch {
-            // localStorage might be full
-          }
-        };
-        reader.readAsDataURL(blob);
-
-        toast.success('Recording saved successfully!');
+        autoSaveVideo(blob, title, stoppedByEmotion);
       };
 
       recorder.start(1000);
       setRecording(true);
       setRecordingTime(0);
       timerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
+
+      // Simulated emotion monitoring — random chance of "distress" after 8-15s
+      const distressTime = 8000 + Math.random() * 7000;
+      const shouldTriggerDistress = Math.random() > 0.6; // 40% chance
+
+      emotionRef.current = setInterval(() => {
+        setEmotionStatus('monitoring');
+      }, 2000);
+
+      if (shouldTriggerDistress) {
+        setTimeout(() => {
+          if (recorderRef.current?.state === 'recording') {
+            stoppedByEmotion = true;
+            setEmotionStopped(true);
+            setEmotionStatus('distressed');
+            toast.error('Recording stopped due to emotional distress. Please record when you are calm.', { duration: 6000 });
+            finishRecording(true);
+          }
+        }, distressTime);
+      }
     } catch {
       toast.error('Camera/mic access denied');
     }
-  }, [title]);
+  }, [title, autoSaveVideo, finishRecording]);
 
   const stopRecording = useCallback(() => {
-    recorderRef.current?.stop();
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    streamRef.current = null;
-    if (timerRef.current) clearInterval(timerRef.current);
-    setRecording(false);
-  }, []);
+    finishRecording(false);
+  }, [finishRecording]);
 
   const downloadVideo = useCallback(() => {
     if (!recordedBlob) return;
-    const url = URL.createObjectURL(recordedBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `legacy-video-${Date.now()}.webm`;
-    a.click();
-    URL.revokeObjectURL(url);
+    triggerAutoDownload(recordedBlob);
     toast.success('Video downloaded!');
-  }, [recordedBlob]);
+  }, [recordedBlob, triggerAutoDownload]);
 
   const formatTime = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
-
-  const runAnalysis = () => {
-    setAnalyzing(true);
-    setAnalysisStep(-1);
-    setAnalysisResult(null);
-
-    analysisChecks.forEach((check, i) => {
-      setTimeout(() => setAnalysisStep(i), check.delay);
-    });
-
-    setTimeout(() => {
-      const isGenuine = Math.random() > 0.2;
-      const result: VideoMessage['analysisResult'] = {
-        status: isGenuine ? 'verified' : 'review_needed',
-        confidence: isGenuine ? 82 + Math.floor(Math.random() * 15) : 45 + Math.floor(Math.random() * 20),
-        checks: analysisChecks.map((c) => ({ label: c.label, passed: isGenuine || Math.random() > 0.4 })),
-      };
-      setAnalysisResult(result);
-      setAnalyzing(false);
-    }, 3500);
-  };
-
-  const handleSave = () => {
-    if (!title.trim() || !file) { toast.error('Title and video required'); return; }
-    addVideo({ title, fileName: file.name, analysisResult: analysisResult || undefined });
-    setTitle('');
-    setFile(null);
-    setRecordedBlob(null);
-    setRecordedUrl(null);
-    setAnalysisResult(null);
-    toast.success('Video saved!');
-  };
 
   return (
     <div className="page-container">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="section-title">Legacy Videos</h1>
-        <p className="text-muted-foreground text-sm mt-1">Record messages for the next generation</p>
+        <p className="text-muted-foreground text-sm mt-1">Record messages for the next generation — fully automatic saving</p>
       </motion.div>
 
       <div className="glass-card p-6 mt-6">
@@ -162,6 +197,23 @@ const VideosPage = () => {
                   <span className="w-2 h-2 rounded-full bg-destructive-foreground animate-pulse" />
                   REC {formatTime(recordingTime)}
                 </div>
+                {/* Emotion monitor overlay */}
+                <div className="absolute top-3 right-3">
+                  <motion.div
+                    animate={{ scale: [1, 1.05, 1] }}
+                    transition={{ repeat: Infinity, duration: 2 }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm ${
+                      emotionStatus === 'distressed'
+                        ? 'bg-destructive/90 text-destructive-foreground'
+                        : emotionStatus === 'monitoring'
+                        ? 'bg-warning/80 text-warning-foreground'
+                        : 'bg-success/80 text-success-foreground'
+                    }`}
+                  >
+                    <Brain className="w-3 h-3" />
+                    {emotionStatus === 'distressed' ? '😢 Distress Detected' : emotionStatus === 'monitoring' ? '🧠 Monitoring...' : '😊 Calm'}
+                  </motion.div>
+                </div>
               </div>
               <button onClick={stopRecording} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-destructive text-destructive-foreground text-sm font-medium">
                 <Square className="w-4 h-4" /> Stop Recording
@@ -169,38 +221,35 @@ const VideosPage = () => {
             </div>
           ) : recordedUrl ? (
             <div className="space-y-3">
+              {emotionStopped && (
+                <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/20">
+                  <AlertOctagon className="w-5 h-5 text-destructive flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold text-destructive">Recording stopped due to emotional distress</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Please record when you are calm and composed for best results.</p>
+                  </div>
+                </motion.div>
+              )}
               <div className="relative rounded-lg overflow-hidden border border-success/30">
                 <video ref={previewRef} src={recordedUrl} controls className="w-full aspect-video object-cover" />
                 <div className="absolute top-2 right-2">
                   <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-success/90 text-success-foreground text-xs font-medium">
-                    <CheckCircle className="w-3 h-3" /> Recorded
+                    <CheckCircle className="w-3 h-3" /> Auto-Saved
                   </span>
                 </div>
               </div>
               <div className="flex gap-2">
                 <button onClick={startRecording} className="flex-1 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:bg-muted/30 transition-colors">
-                  Re-record
+                  Record Again
                 </button>
                 <button onClick={downloadVideo} className="flex items-center justify-center gap-1 px-4 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:bg-muted/30 transition-colors">
-                  <Download className="w-3.5 h-3.5" /> Download
+                  <Download className="w-3.5 h-3.5" /> Download Again
                 </button>
               </div>
             </div>
           ) : (
-            <div className="flex gap-3">
-              <button onClick={startRecording} className="flex-1 flex items-center justify-center gap-2 p-4 rounded-lg border-2 border-dashed border-border hover:border-primary/50 transition-colors text-sm text-muted-foreground">
-                <Camera className="w-5 h-5" /> Record with Webcam
-              </button>
-              <label className="flex-1 flex items-center justify-center gap-2 p-4 rounded-lg border-2 border-dashed border-border hover:border-primary/50 cursor-pointer transition-colors text-sm text-muted-foreground">
-                <Upload className="w-5 h-5" /> {file ? file.name : 'Upload Video'}
-                <input type="file" accept="video/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); }} className="hidden" />
-              </label>
-            </div>
-          )}
-
-          {file && !analysisResult && !recording && (
-            <button onClick={runAnalysis} disabled={analyzing} className="w-full py-2.5 rounded-lg bg-secondary text-secondary-foreground text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50">
-              <Brain className="w-4 h-4" /> {analyzing ? 'Analyzing...' : 'Run AI Video Analysis'}
+            <button onClick={startRecording} className="w-full flex items-center justify-center gap-2 p-6 rounded-lg border-2 border-dashed border-border hover:border-primary/50 transition-colors text-sm text-muted-foreground">
+              <Camera className="w-5 h-5" /> Start Recording — Auto-saves when done
             </button>
           )}
 
@@ -212,7 +261,6 @@ const VideosPage = () => {
                   <Brain className="w-5 h-5 text-primary" />
                   <h3 className="font-semibold text-sm">AI Video Authenticity Analysis</h3>
                 </div>
-
                 <div className="space-y-2.5">
                   {analysisChecks.map((check, i) => (
                     <motion.div key={i} initial={{ opacity: 0.3 }} animate={{ opacity: analysisStep >= i ? 1 : 0.3 }} className="flex items-center gap-3 text-sm">
@@ -227,7 +275,6 @@ const VideosPage = () => {
                     </motion.div>
                   ))}
                 </div>
-
                 {analysisResult && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`p-4 rounded-lg border ${analysisResult.status === 'verified' ? 'bg-success/5 border-success/20' : 'bg-warning/5 border-warning/20'}`}>
                     <div className="flex items-center justify-between">
@@ -253,20 +300,24 @@ const VideosPage = () => {
               </motion.div>
             )}
           </AnimatePresence>
-
-          <button onClick={handleSave} disabled={!file || !title.trim() || recording} className="w-full py-2.5 rounded-lg gradient-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
-            Save Video Message
-          </button>
         </div>
       </div>
 
       {videos.length > 0 && (
         <div className="mt-8">
-          <h2 className="text-lg font-semibold mb-4">Saved Videos</h2>
+          <h2 className="text-lg font-semibold mb-4">Saved Videos ({videos.length})</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {videos.map((v) => <VideoCard key={v.id} video={v} />)}
           </div>
         </div>
+      )}
+
+      {videos.length === 0 && !recording && !recordedUrl && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-8 glass-card p-8 text-center">
+          <Video className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+          <h3 className="font-semibold text-muted-foreground">No videos yet</h3>
+          <p className="text-sm text-muted-foreground/70 mt-1">Record your first legacy message above</p>
+        </motion.div>
       )}
     </div>
   );
