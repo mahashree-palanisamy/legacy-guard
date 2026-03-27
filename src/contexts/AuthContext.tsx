@@ -87,3 +87,8 @@ export const useAuth = () => {
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
 };
+
+export const useIsOwner = () => {
+  const { user } = useAuth();
+  return user?.role === 'OWNER';
+};

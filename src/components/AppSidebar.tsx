@@ -22,6 +22,12 @@ const ownerLinks = [
 
 const heirLinks = [
   { to: '/heir-dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/assets', label: 'Assets', icon: Shield },
+  { to: '/videos', label: 'Legacy Videos', icon: Video },
+  { to: '/will', label: 'Digital Will', icon: FileText },
+  { to: '/profile', label: 'Profile', icon: User },
+  { to: '/settings', label: 'Settings', icon: Settings },
+  { to: '/help', label: 'Help & Guide', icon: HelpCircle },
 ];
 
 const AppSidebar = () => {
