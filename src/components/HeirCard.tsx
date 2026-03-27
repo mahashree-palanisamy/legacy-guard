@@ -7,9 +7,10 @@ interface HeirCardProps {
   heir: Heir;
   onEdit?: () => void;
   onDelete?: () => void;
+  showActions?: boolean;
 }
 
-const HeirCard = ({ heir, onEdit, onDelete }: HeirCardProps) => (
+const HeirCard = ({ heir, onEdit, onDelete, showActions = true }: HeirCardProps) => (
   <motion.div
     initial={{ opacity: 0, scale: 0.95 }}
     animate={{ opacity: 1, scale: 1 }}
@@ -27,10 +28,12 @@ const HeirCard = ({ heir, onEdit, onDelete }: HeirCardProps) => (
           </p>
         </div>
       </div>
-      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button onClick={onEdit} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground"><Edit className="w-4 h-4" /></button>
-        <button onClick={onDelete} className="p-1.5 rounded-lg hover:bg-destructive/10 text-destructive"><Trash2 className="w-4 h-4" /></button>
-      </div>
+      {showActions && (
+        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={onEdit} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground"><Edit className="w-4 h-4" /></button>
+          <button onClick={onDelete} className="p-1.5 rounded-lg hover:bg-destructive/10 text-destructive"><Trash2 className="w-4 h-4" /></button>
+        </div>
+      )}
     </div>
 
     <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">

@@ -56,6 +56,12 @@ const App = () => (
                 {/* Heir routes */}
                 <Route element={<PrivateRoute allowedRoles={['HEIR']}><DashboardLayout /></PrivateRoute>}>
                   <Route path="/heir-dashboard" element={<HeirDashboardPage />} />
+                  <Route path="/assets" element={<AssetsPage />} />
+                  <Route path="/videos" element={<VideosPage />} />
+                  <Route path="/will" element={<WillPage />} />
+                  <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/help" element={<HelpPage />} />
                 </Route>
 
                 <Route path="*" element={<NotFound />} />

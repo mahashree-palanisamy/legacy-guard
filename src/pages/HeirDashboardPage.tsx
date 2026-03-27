@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Shield, Video, FileText, Lock } from 'lucide-react';
+import { Shield, Video, FileText, Lock, Heart } from 'lucide-react';
 import { useAppData } from '@/contexts/AppDataContext';
 import AssetCard from '@/components/AssetCard';
 import VideoCard from '@/components/VideoCard';
@@ -12,12 +12,25 @@ const HeirDashboardPage = () => {
     <div className="page-container">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex items-center gap-3 mb-1">
-          <div className="p-2 rounded-lg bg-success/10 text-success">
+          <div className="p-2 rounded-lg bg-primary/10 text-primary">
             <Lock className="w-5 h-5" />
           </div>
           <h1 className="section-title">Heir Dashboard</h1>
         </div>
-        <p className="text-muted-foreground text-sm mt-1">Access to inherited digital assets has been granted.</p>
+
+        {/* Emotional message */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="mt-4 p-5 rounded-xl bg-gradient-to-r from-primary/10 via-secondary/10 to-primary/10 border border-primary/10"
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <Heart className="w-4 h-4 text-primary" />
+            <span className="text-sm font-semibold">You are viewing the legacy of your loved one 💖</span>
+          </div>
+          <p className="text-xs text-muted-foreground">Access to inherited digital assets has been granted. All content is read-only.</p>
+        </motion.div>
       </motion.div>
 
       {/* Assigned Assets */}
