@@ -39,23 +39,21 @@ const App = () => (
                 <Route path="/register" element={<RegisterPage />} />
                 <Route path="/death-verification" element={<DeathVerificationPage />} />
 
-                {/* Owner routes */}
+                {/* Owner-only routes */}
                 <Route element={<PrivateRoute allowedRoles={['OWNER']}><DashboardLayout /></PrivateRoute>}>
                   <Route path="/dashboard" element={<DashboardPage />} />
-                  <Route path="/assets" element={<AssetsPage />} />
                   <Route path="/heirs" element={<HeirsPage />} />
-                  <Route path="/videos" element={<VideosPage />} />
-                  <Route path="/will" element={<WillPage />} />
                   <Route path="/activity" element={<ActivityPage />} />
-                  <Route path="/profile" element={<ProfilePage />} />
-                  <Route path="/settings" element={<SettingsPage />} />
-                  <Route path="/help" element={<HelpPage />} />
                   <Route path="/notifications" element={<NotificationsPage />} />
                 </Route>
 
-                {/* Heir routes */}
+                {/* Heir-only routes */}
                 <Route element={<PrivateRoute allowedRoles={['HEIR']}><DashboardLayout /></PrivateRoute>}>
                   <Route path="/heir-dashboard" element={<HeirDashboardPage />} />
+                </Route>
+
+                {/* Shared routes (both roles) */}
+                <Route element={<PrivateRoute allowedRoles={['OWNER', 'HEIR']}><DashboardLayout /></PrivateRoute>}>
                   <Route path="/assets" element={<AssetsPage />} />
                   <Route path="/videos" element={<VideosPage />} />
                   <Route path="/will" element={<WillPage />} />
