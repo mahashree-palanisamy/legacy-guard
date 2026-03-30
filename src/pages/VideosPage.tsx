@@ -1,9 +1,10 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Video, Camera, Loader2, CheckCircle, AlertTriangle, Brain, Square, Download, AlertOctagon, ShieldAlert } from 'lucide-react';
+import { Video, Camera, Loader2, CheckCircle, AlertTriangle, Brain, Square, Download, AlertOctagon, ShieldAlert, FileText, Pencil } from 'lucide-react';
 import VideoCard from '@/components/VideoCard';
 import { useAppData, type VideoMessage } from '@/contexts/AppDataContext';
 import { useIsOwner } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 const analysisChecks = [
@@ -28,6 +29,9 @@ const VideosPage = () => {
   const [recordingTime, setRecordingTime] = useState(0);
   const [emotionStopped, setEmotionStopped] = useState(false);
   const [emotionStatus, setEmotionStatus] = useState<'calm' | 'monitoring' | 'distressed'>('calm');
+  const [transcript, setTranscript] = useState('');
+  const [transcribing, setTranscribing] = useState(false);
+  const [editingTranscript, setEditingTranscript] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const previewRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -44,6 +48,42 @@ const VideosPage = () => {
       if (recordedUrl) URL.revokeObjectURL(recordedUrl);
     };
   }, [recordedUrl]);
+
+  const transcribeAudio = useCallback(async (blob: Blob) => {
+    setTranscribing(true);
+    setTranscript('');
+    try {
+      // Extract audio from the video blob
+      const formData = new FormData();
+      formData.append('audio', blob, 'recording.webm');
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/transcribe`,
+        {
+          method: 'POST',
+          headers: {
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: formData,
+        }
+      );
+
+      if (!response.ok) throw new Error(`Transcription failed: ${response.status}`);
+      const data = await response.json();
+      if (data.text) {
+        setTranscript(data.text);
+        toast.success('Transcription complete!');
+      } else {
+        setTranscript('No speech detected in the recording.');
+      }
+    } catch (err) {
+      console.error('Transcription error:', err);
+      toast.error('Transcription failed. Please try again.');
+    } finally {
+      setTranscribing(false);
+    }
+  }, []);
 
   const triggerAutoDownload = useCallback((blob: Blob) => {
     const url = URL.createObjectURL(blob);
@@ -84,7 +124,10 @@ const VideosPage = () => {
       addVideo({ title: videoTitle || 'Untitled Recording', fileName: `recording-${Date.now()}.webm`, analysisResult: result });
       toast.success('Video auto-saved to your account & downloaded!');
     }, 3500);
-  }, [addVideo, triggerAutoDownload]);
+
+    // Auto-transcribe
+    transcribeAudio(blob);
+  }, [addVideo, triggerAutoDownload, transcribeAudio]);
 
   const finishRecording = useCallback(() => {
     recorderRef.current?.stop();
@@ -103,6 +146,7 @@ const VideosPage = () => {
     setAnalysisResult(null);
     setRecordedBlob(null);
     setRecordedUrl(null);
+    setTranscript('');
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -138,7 +182,7 @@ const VideosPage = () => {
             stoppedByEmotion = true;
             setEmotionStopped(true);
             setEmotionStatus('distressed');
-            toast.error('Recording stopped due to emotional distress. Please record when you are calm.', { duration: 6000 });
+            toast.error('Recording stopped due to emotional distress.', { duration: 6000 });
             finishRecording();
           }
         }, distressTime);
@@ -180,7 +224,7 @@ const VideosPage = () => {
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium mb-1.5 block">Title</label>
-              <input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-4 py-2.5 rounded-lg bg-muted/50 border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary" placeholder="Message for Next Generation" />
+              <input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-4 py-2.5 rounded-lg bg-muted/50 border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground" placeholder="Message for Next Generation" />
             </div>
 
             {recording ? (
@@ -232,6 +276,44 @@ const VideosPage = () => {
                     <Download className="w-3.5 h-3.5" /> Download Again
                   </button>
                 </div>
+
+                {/* Transcript Section */}
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-primary" />
+                      <h3 className="font-semibold text-sm">AI Transcript</h3>
+                    </div>
+                    {transcript && !transcribing && (
+                      <button
+                        onClick={() => setEditingTranscript(!editingTranscript)}
+                        className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:bg-muted/50 transition-colors"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        {editingTranscript ? 'Done' : 'Edit'}
+                      </button>
+                    )}
+                  </div>
+                  {transcribing ? (
+                    <div className="flex items-center gap-3 py-4">
+                      <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                      <p className="text-sm text-muted-foreground">Transcribing audio with AI...</p>
+                    </div>
+                  ) : transcript ? (
+                    editingTranscript ? (
+                      <textarea
+                        value={transcript}
+                        onChange={(e) => setTranscript(e.target.value)}
+                        rows={6}
+                        className="w-full p-3 rounded-lg bg-muted/30 border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                      />
+                    ) : (
+                      <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap">{transcript}</p>
+                    )
+                  ) : (
+                    <p className="text-sm text-muted-foreground py-2">Transcript will appear here after recording.</p>
+                  )}
+                </motion.div>
               </div>
             ) : (
               <button onClick={startRecording} className="w-full flex items-center justify-center gap-2 p-6 rounded-lg border-2 border-dashed border-border hover:border-primary/50 transition-colors text-sm text-muted-foreground">

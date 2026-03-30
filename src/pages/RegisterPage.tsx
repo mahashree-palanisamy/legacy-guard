@@ -2,7 +2,8 @@ import React, { useState, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { Lock, Mail, User, Eye, EyeOff, Check, X, Camera, CheckCircle, Download } from 'lucide-react';
+import { Lock, Mail, User, Eye, EyeOff, Check, X, Camera, CheckCircle, Download, Shield, Loader2 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 const getStrength = (pw: string) => {
@@ -28,6 +29,15 @@ const RegisterPage = () => {
   const [loading, setLoading] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [capturedFace, setCapturedFace] = useState<string | null>(null);
+  
+  // OTP state
+  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [demoOtp, setDemoOtp] = useState('');
+  const [otpExpiresAt, setOtpExpiresAt] = useState(0);
+  
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -77,11 +87,51 @@ const RegisterPage = () => {
     link.click();
   };
 
+  const sendOtp = async () => {
+    if (!email) { toast.error('Please enter your email first'); return; }
+    setSendingOtp(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('send-otp', {
+        body: { email },
+      });
+      if (error) throw error;
+      setOtpSent(true);
+      if (data?.demo_otp) setDemoOtp(data.demo_otp);
+      if (data?.expiresAt) setOtpExpiresAt(data.expiresAt);
+      toast.success('OTP sent to your email!');
+    } catch (err) {
+      console.error('OTP error:', err);
+      toast.error('Failed to send OTP. Please try again.');
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
+  const verifyOtp = () => {
+    if (!otp || otp.length !== 6) {
+      toast.error('Please enter a valid 6-digit OTP');
+      return;
+    }
+    if (Date.now() > otpExpiresAt) {
+      toast.error('OTP has expired. Please request a new one.');
+      setOtpSent(false);
+      setOtp('');
+      return;
+    }
+    if (otp === demoOtp) {
+      setOtpVerified(true);
+      toast.success('Email verified successfully!');
+    } else {
+      toast.error('Invalid OTP. Please try again.');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password !== confirm) { toast.error('Passwords do not match'); return; }
     if (strength < 2) { toast.error('Password is too weak'); return; }
     if (!capturedFace) { toast.error('Please capture your face for registration'); return; }
+    if (!otpVerified) { toast.error('Please verify your email with OTP first'); return; }
     setLoading(true);
     try {
       await register(name, email, password);
@@ -99,30 +149,80 @@ const RegisterPage = () => {
             <div className="w-14 h-14 rounded-2xl gradient-primary flex items-center justify-center mx-auto mb-4">
               <User className="w-7 h-7 text-primary-foreground" />
             </div>
-            <h1 className="text-2xl font-bold text-primary-foreground">Create Account</h1>
-            <p className="text-sm text-primary-foreground/60 mt-1">Secure your digital legacy</p>
+            <h1 className="text-2xl font-bold">Create Account</h1>
+            <p className="text-sm text-muted-foreground mt-1">Secure your digital legacy</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="text-sm font-medium text-primary-foreground/80 mb-1.5 block">Full Name</label>
+              <label className="text-sm font-medium mb-1.5 block">Full Name</label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-muted/50 border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary" placeholder="John Doe" required />
+                <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-muted/50 border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground" placeholder="John Doe" required />
               </div>
             </div>
-            <div>
-              <label className="text-sm font-medium text-primary-foreground/80 mb-1.5 block">Email</label>
+
+            {/* Email + OTP */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium mb-1.5 block">Email</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-muted/50 border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary" placeholder="you@example.com" required />
+                <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); setOtpSent(false); setOtpVerified(false); }} className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-muted/50 border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground" placeholder="you@example.com" required />
               </div>
+              
+              {!otpVerified ? (
+                !otpSent ? (
+                  <button
+                    type="button"
+                    onClick={sendOtp}
+                    disabled={!email || sendingOtp}
+                    className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-primary/30 text-primary text-sm font-medium hover:bg-primary/10 transition-colors disabled:opacity-50"
+                  >
+                    {sendingOtp ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
+                    {sendingOtp ? 'Sending OTP...' : 'Send Verification OTP'}
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={otp}
+                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        className="flex-1 px-4 py-2.5 rounded-lg bg-muted/50 border border-border text-foreground text-sm text-center tracking-[0.5em] font-mono focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground placeholder:tracking-normal"
+                        placeholder="Enter OTP"
+                        maxLength={6}
+                      />
+                      <button
+                        type="button"
+                        onClick={verifyOtp}
+                        className="px-4 py-2.5 rounded-lg gradient-primary text-primary-foreground text-sm font-medium"
+                      >
+                        Verify
+                      </button>
+                    </div>
+                    {demoOtp && (
+                      <p className="text-[10px] text-muted-foreground bg-muted/30 px-2 py-1 rounded text-center">
+                        Demo OTP: <span className="font-mono font-bold text-primary">{demoOtp}</span>
+                      </p>
+                    )}
+                    <button type="button" onClick={sendOtp} disabled={sendingOtp} className="text-xs text-muted-foreground hover:text-primary transition-colors">
+                      Resend OTP
+                    </button>
+                  </div>
+                )
+              ) : (
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-success/10 border border-success/20">
+                  <CheckCircle className="w-4 h-4 text-success" />
+                  <span className="text-xs text-success font-medium">Email verified ✓</span>
+                </div>
+              )}
             </div>
+
             <div>
-              <label className="text-sm font-medium text-primary-foreground/80 mb-1.5 block">Password</label>
+              <label className="text-sm font-medium mb-1.5 block">Password</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input type={showPw ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-2.5 rounded-lg bg-muted/50 border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary" placeholder="••••••••" required />
+                <input type={showPw ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-2.5 rounded-lg bg-muted/50 border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground" placeholder="••••••••" required />
                 <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
                   {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -139,10 +239,10 @@ const RegisterPage = () => {
               )}
             </div>
             <div>
-              <label className="text-sm font-medium text-primary-foreground/80 mb-1.5 block">Confirm Password</label>
+              <label className="text-sm font-medium mb-1.5 block">Confirm Password</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="w-full pl-10 pr-10 py-2.5 rounded-lg bg-muted/50 border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary" placeholder="••••••••" required />
+                <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="w-full pl-10 pr-10 py-2.5 rounded-lg bg-muted/50 border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-muted-foreground" placeholder="••••••••" required />
                 {confirm && (
                   <span className="absolute right-3 top-1/2 -translate-y-1/2">
                     {password === confirm ? <Check className="w-4 h-4 text-success" /> : <X className="w-4 h-4 text-destructive" />}
@@ -153,7 +253,7 @@ const RegisterPage = () => {
 
             {/* Face Registration */}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-primary-foreground/80 block">Face Registration <span className="text-destructive">*</span></label>
+              <label className="text-sm font-medium block">Face Registration <span className="text-destructive">*</span></label>
               <canvas ref={canvasRef} className="hidden" />
               {showCamera ? (
                 <div className="relative rounded-lg overflow-hidden border border-border">
@@ -194,7 +294,7 @@ const RegisterPage = () => {
               )}
             </div>
 
-            <button type="submit" disabled={loading || !capturedFace} className="w-full py-2.5 rounded-lg gradient-primary text-primary-foreground font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+            <button type="submit" disabled={loading || !capturedFace || !otpVerified} className="w-full py-2.5 rounded-lg gradient-primary text-primary-foreground font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-opacity">
               {loading ? 'Creating account...' : 'Create Account'}
             </button>
           </form>
